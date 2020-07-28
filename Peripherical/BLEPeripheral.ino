@@ -1,14 +1,10 @@
+#include <carloop.h>
+#include <TinyGPS++.h>
+
 #if defined(ARDUINO) 
 SYSTEM_MODE(SEMI_AUTOMATIC); 
 #endif
 
-/* 
- * BLE peripheral preferred connection parameters:
- *     - Minimum connection interval = MIN_CONN_INTERVAL * 1.25 ms, where MIN_CONN_INTERVAL ranges from 0x0006 to 0x0C80
- *     - Maximum connection interval = MAX_CONN_INTERVAL * 1.25 ms,  where MAX_CONN_INTERVAL ranges from 0x0006 to 0x0C80
- *     - The SLAVE_LATENCY ranges from 0x0000 to 0x03E8
- *     - Connection supervision timeout = CONN_SUPERVISION_TIMEOUT * 10 ms, where CONN_SUPERVISION_TIMEOUT ranges from 0x000A to 0x0C80
- */
 #define MIN_CONN_INTERVAL          0x0028 // 50ms.
 #define MAX_CONN_INTERVAL          0x0190 // 500ms.
 #define SLAVE_LATENCY              0x0000 // No slave latency.
@@ -21,6 +17,13 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 #define CHARACTERISTIC1_MAX_LEN    8
 #define CHARACTERISTIC2_MAX_LEN    8
 #define CHARACTERISTIC3_MAX_LEN    8
+#define CHARACTERISTIC4_MAX_LEN    8
+
+void sendObdRequest();
+void waitForObdResponse();
+void delayUntilNextRequest();
+
+Carloop<CarloopRevision2> carloop;
 
 // Primary service 128-bits UUID
 static uint8_t service1_uuid[16] = { 0x71,0x3d,0x00,0x00,0x50,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
@@ -32,6 +35,7 @@ static uint8_t char2_uuid[16]    = { 0x71,0x3d,0x00,0x03,0x50,0x3e,0x4c,0x75,0xb
 static uint8_t service2_uuid[16] = { 0x71,0x3d,0x00,0x00,0x51,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
 // Characteristics 128-bits UUID
 static uint8_t char3_uuid[16]    = { 0x71,0x3d,0x00,0x02,0x51,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
+static uint8_t char4_uuid[16]    = { 0x71,0x3d,0x00,0x03,0x51,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
 
 // GAP and GATT characteristics value
 static uint8_t  appearance[2] = { 
@@ -50,32 +54,6 @@ static uint8_t  conn_param[8] = {
   LOW_BYTE(CONN_SUPERVISION_TIMEOUT), HIGH_BYTE(CONN_SUPERVISION_TIMEOUT)
 };
 
-/* 
- * BLE peripheral advertising parameters:
- *     - advertising_interval_min: [0x0020, 0x4000], default: 0x0800, unit: 0.625 msec
- *     - advertising_interval_max: [0x0020, 0x4000], default: 0x0800, unit: 0.625 msec
- *     - advertising_type: 
- *           BLE_GAP_ADV_TYPE_ADV_IND 
- *           BLE_GAP_ADV_TYPE_ADV_DIRECT_IND 
- *           BLE_GAP_ADV_TYPE_ADV_SCAN_IND 
- *           BLE_GAP_ADV_TYPE_ADV_NONCONN_IND
- *     - own_address_type: 
- *           BLE_GAP_ADDR_TYPE_PUBLIC 
- *           BLE_GAP_ADDR_TYPE_RANDOM
- *     - advertising_channel_map: 
- *           BLE_GAP_ADV_CHANNEL_MAP_37 
- *           BLE_GAP_ADV_CHANNEL_MAP_38 
- *           BLE_GAP_ADV_CHANNEL_MAP_39 
- *           BLE_GAP_ADV_CHANNEL_MAP_ALL
- *     - filter policies: 
- *           BLE_GAP_ADV_FP_ANY 
- *           BLE_GAP_ADV_FP_FILTER_SCANREQ 
- *           BLE_GAP_ADV_FP_FILTER_CONNREQ 
- *           BLE_GAP_ADV_FP_FILTER_BOTH
- *     
- * Note:  If the advertising_type is set to BLE_GAP_ADV_TYPE_ADV_SCAN_IND or BLE_GAP_ADV_TYPE_ADV_NONCONN_IND, 
- *        the advertising_interval_min and advertising_interval_max should not be set to less than 0x00A0.
- */
 static advParams_t adv_params = {
   .adv_int_min   = 0x0030,
   .adv_int_max   = 0x0030,
@@ -108,89 +86,73 @@ static uint8_t scan_response[] = {
 static uint16_t character1_handle = 0x0000;
 static uint16_t character2_handle = 0x0000;
 static uint16_t character3_handle = 0x0000;
+static uint16_t character4_handle = 0x0000;
 
 // Buffer of characterisitc value.
 static uint8_t characteristic1_data[CHARACTERISTIC1_MAX_LEN] = { 0x01 };
 static uint8_t characteristic2_data[CHARACTERISTIC2_MAX_LEN] = { 0x00 };
 static uint8_t characteristic3_data[CHARACTERISTIC2_MAX_LEN] = { 0x03 };
+static uint8_t characteristic4_data[CHARACTERISTIC2_MAX_LEN] = { 0x04 };
 
 // Timer task.
 static btstack_timer_source_t characteristic2;
 
-/**
- * @brief Connect handle.
- *
- * @param[in]  status   BLE_STATUS_CONNECTION_ERROR or BLE_STATUS_OK.
- * @param[in]  handle   Connect handle.
- *
- * @retval None
- */
+// OBD CAN Message IDs
+const auto OBD_REQUEST_ID = 0x7E0;
+const auto OBD_REPLY_ID = 0x7E8;
+const auto OBD_PID_SERVICE = 0x01;
+
+// OBD PID constants
+const auto ENGINE_COOLANT_TEMP = 0x05;
+const auto ENGINE_RPM = 0x0C;
+const auto VEHICLE_SPEED = 0x0D;
+const auto MAF_SENSOR = 0x10;
+const auto O2_VOLTAGE = 0x14;
+const auto THROTTLE = 0x11;
+
+const uint8_t pid = ENGINE_RPM;
+auto *obdLoopFunction = sendObdRequest;
+unsigned long transitionTime = 0;
+
 void deviceConnectedCallback(BLEStatus_t status, uint16_t handle) {
   switch (status) {
     case BLE_STATUS_OK:
-      Serial.println("Device connected!");
+      Serial.println("Device Connected!");
+      break;
+    case BLE_STATUS_CONNECTION_ERROR:
+      Serial.println("Connection Error!");
       break;
     default: break;
   }
 }
 
-/**
- * @brief Disconnect handle.
- *
- * @param[in]  handle   Connect handle.
- *
- * @retval None
- */
 void deviceDisconnectedCallback(uint16_t handle) {
   Serial.println("Disconnected.");
 }
 
-/**
- * @brief Callback for reading event.
- *
- * @note  If characteristic contains client characteristic configuration, then client characteristic configration handle is value_handle+1.
- *        Now can't add user_descriptor.
- *
- * @param[in]  value_handle    
- * @param[in]  buffer 
- * @param[in]  buffer_size    Ignore it.
- *
- * @retval  Length of current attribute value.
- */
 uint16_t gattReadCallback(uint16_t value_handle, uint8_t * buffer, uint16_t buffer_size) {   
   uint8_t characteristic_len = 0;
-
   Serial.print("Read value handler: ");
   Serial.println(value_handle, HEX);
 
-  if (character1_handle == value_handle) {   // Characteristic value handle.
-    Serial.println("Character1 read:");
-    memcpy(buffer, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
-    characteristic_len = CHARACTERISTIC1_MAX_LEN;
-  }
-  else if (character1_handle+1 == value_handle) {   // Client Characteristic Configuration Descriptor Handle.
-    Serial.println("Character1 cccd read:");
-    uint8_t buf[2] = { 0x01,0x00 };
-    memcpy(buffer, buf, 2);
-    characteristic_len = 2;
-  }
-  else if (character2_handle == value_handle) {
+  if (character2_handle == value_handle) {
     Serial.println("Character2 read:");
     memcpy(buffer, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
     characteristic_len = CHARACTERISTIC2_MAX_LEN;
   }
+  else if (character3_handle == value_handle) {
+    Serial.println("Character3 read:");
+    memcpy(buffer, characteristic3_data, CHARACTERISTIC3_MAX_LEN);
+    characteristic_len = CHARACTERISTIC3_MAX_LEN;
+  }
+  else if (character4_handle == value_handle) {
+    Serial.println("Character4 read:");
+    memcpy(buffer, characteristic4_data, CHARACTERISTIC4_MAX_LEN);
+    characteristic_len = CHARACTERISTIC4_MAX_LEN;
+  }
   return characteristic_len;
 }
 
-/**
- * @brief Callback for writting event.
- *
- * @param[in]  value_handle  
- * @param[in]  *buffer       The buffer pointer of writting data.
- * @param[in]  size          The length of writting data.   
- *
- * @retval 
- */
 int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
   Serial.print("Write value handler: ");
   Serial.println(value_handle, HEX);
@@ -204,40 +166,14 @@ int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
     }
     Serial.println(" ");
   }
-  else if (character1_handle+1 == value_handle) {
-    Serial.print("Characteristic1 cccd write value: ");
-    for (uint8_t index = 0; index < size; index++) {
-      Serial.print(buffer[index], HEX);
-      Serial.print(" ");
-    }
-    Serial.println(" ");
-  }
-  else if (character2_handle == value_handle) {
-    memcpy(characteristic2_data, buffer, size);
-    Serial.print("Characteristic2 write value: ");
-    for (uint8_t index = 0; index < size; index++) {
-      Serial.print(characteristic2_data[index], HEX);
-      Serial.print(" ");
-    }
-    Serial.println(" ");
-  }
   return 0;
 }
 
-/**
- * @brief Timer task for sending notify of characteristic to client.
- *
- * @param[in]  *ts   
- *
- * @retval None
- */
 static void characteristic2_notify(btstack_timer_source_t *ts) {
-  Serial.println("characteristic2_notify");
-
+  // Serial.println("characteristic2_notify");
   characteristic2_data[CHARACTERISTIC2_MAX_LEN-1]++;
   ble.sendNotify(character2_handle, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
   
-  // Restart timer.
   ble.setTimer(ts, 10000);
   ble.addTimer(ts);
 }
@@ -269,12 +205,13 @@ void setup() {
   // Add primary service1.
   ble.addService(service1_uuid);
   // Add characteristic to service1, return value handle of characteristic.
-  character1_handle = ble.addCharacteristicDynamic(char1_uuid, ATT_PROPERTY_NOTIFY|ATT_PROPERTY_WRITE_WITHOUT_RESPONSE, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
+  character1_handle = ble.addCharacteristicDynamic(char1_uuid, ATT_PROPERTY_WRITE_WITHOUT_RESPONSE, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
   character2_handle = ble.addCharacteristicDynamic(char2_uuid, ATT_PROPERTY_READ|ATT_PROPERTY_NOTIFY, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
   
   // Add primary sevice2.
   ble.addService(service2_uuid);
   character3_handle = ble.addCharacteristic(char3_uuid, ATT_PROPERTY_READ, characteristic3_data, CHARACTERISTIC3_MAX_LEN);
+  character4_handle = ble.addCharacteristic(char4_uuid, ATT_PROPERTY_READ, characteristic4_data, CHARACTERISTIC4_MAX_LEN);
 
   // Set BLE advertising parameters
   ble.setAdvertisementParams(&adv_params);
@@ -291,8 +228,50 @@ void setup() {
   characteristic2.process = &characteristic2_notify;
   ble.setTimer(&characteristic2, 10000);
   ble.addTimer(&characteristic2);
+
+  carloop.begin();
+  Serial.println("Carloop Initialized");
+  transitionTime = millis();
 }
 
 void loop() {
-    
+    carloop.update();
+    obdLoopFunction();
+}
+
+void sendObdRequest(){
+  CANMessage message;
+  message.id = OBD_REQUEST_ID;
+  message.len = 8;
+  message.data[0] = 0x02;
+  message.data[1] = OBD_PID_SERVICE;
+  message.data[2] = pid;
+  carloop.can().transmit(message);
+  obdLoopFunction = waitForObdResponse;
+  transitionTime = millis();
+}
+
+void waitForObdResponse(){
+  if(millis() - transitionTime >= 100){
+    obdLoopFunction = delayUntilNextRequest;
+    transitionTime = millis();
+    return;
+  }
+  bool responseReceived = false;
+  CANMessage message;
+  while(carloop.can().receive(message)){
+    if(message.id == OBD_REPLY_ID && message.data[2] == pid){
+      responseReceived = true;
+    }
+  }
+  if(responseReceived){
+    Serial.println("Response Received");
+  }
+}
+
+void delayUntilNextRequest(){
+  if(millis() - transitionTime >= 400){
+    obdLoopFunction = sendObdRequest;
+    transitionTime = millis();
+  }
 }
