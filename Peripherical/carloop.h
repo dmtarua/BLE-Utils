@@ -8,16 +8,14 @@
 #include "application.h"
 #include "TinyGPS++.h"
 
-enum CarloopFeatures_e
-{
+enum CarloopFeatures_e{
     CARLOOP_CAN = 1,
     CARLOOP_GPS = 2,
     CARLOOP_BATTERY = 4,
     CARLOOP_ALL_FEATURES = CARLOOP_CAN | CARLOOP_GPS | CARLOOP_BATTERY
 };
 
-struct CarloopRevision2
-{
+struct CarloopRevision2{
     static constexpr auto CAN_PINS = CAN_D1_D2;
     static constexpr uint32_t CAN_DEFAULT_SPEED = 500000;
 
@@ -37,8 +35,7 @@ struct CarloopRevision2
 };
 
 template <typename Config>
-class Carloop
-{
+class Carloop{
 public:
     Carloop();
 
