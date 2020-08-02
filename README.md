@@ -1,3 +1,3 @@
 # BLE-Utils
 
-Blueetooth Low Energy peripheral configuration to use with a carloop + central.
+Blueetooth Low Energy peripheral and central configurations to use with a carloop.
