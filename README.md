@@ -2,5 +2,5 @@
 
 Blueetooth Low Energy peripheral and central configurations to use with a carloop and a ECU Simulator.
 
-Carloop - https://github.com/carloop
+Carloop - https://github.com/carloop<br/>
 Bluepy - https://github.com/IanHarvey/bluepy
