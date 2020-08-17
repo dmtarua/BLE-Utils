@@ -1,4 +1,4 @@
-import sys
+import sys, binascii
 from bluepy.btle import Scanner, DefaultDelegate, Peripheral, Characteristic, Service
 from bluepy import btle
 
@@ -17,7 +17,7 @@ class NotificationHandler(btle.DefaultDelegate):
         btle.DefaultDelegate.__init__(self)
 
     def handleNotification(self, cHandle, data):
-        print("A notification was received: %s" %data)
+        print("A notification was received from handle %d:\t%s" % (cHandle, binascii.a2b_qp(data)))
 
 def scan():
     scanner = Scanner().withDelegate(ScanDelegate())
@@ -25,7 +25,7 @@ def scan():
 
     for dev in devices:
         print ("Device %s (%s), RSSI=%d dB" % (dev.addr, dev.addrType, dev.rssi))
-        for (adtype, desc, value) in dev.getScanData():
+        for (desc, value) in dev.getScanData():
             print ("  %s = %s" % (desc, value))
 
 def getServices(mac):
