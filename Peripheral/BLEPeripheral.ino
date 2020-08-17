@@ -70,7 +70,6 @@ int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
 }
 
 static void characteristic2_notify(btstack_timer_source_t *ts) {
-  Serial.println("Sending CANMessage...");
   memcpy(characteristic2_data, lastMessageData, 8);
   ble.sendNotify(character2_handle, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
 }
@@ -153,6 +152,7 @@ void waitForObdResponse() {
   while (carloop.can().receive(message)) {
     canMessageCount++;
     if (!byteArray8Equal(message.data, lastMessageData)) {
+      Serial.print("Sending: ");
       Serial.println(messageToString(message));
       memcpy(lastMessageData, message.data, 8);
       ble.setTimer(&characteristic2, 1);
