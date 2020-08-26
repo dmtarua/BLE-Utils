@@ -16,7 +16,9 @@ void delayUntilNextRequest();
 void printValuesAtInterval();
 void printValues();
 bool byteArray8Equal(uint8_t a1[8], uint8_t a2[8]);
+bool scanDone = false;
 String messageToString(const CANMessage &message);
+uint32_t ble_advdata_decode(uint8_t type, uint8_t advdata_len, uint8_t *p_advdata, uint8_t *len, uint8_t *p_field_data);
 
 Carloop<CarloopRevision2> carloop;
 int canMessageCount = 0;
@@ -24,23 +26,6 @@ uint8_t pidIndex = NUM_PIDS_TO_REQUEST - 1;
 uint8_t lastMessageData[8];
 auto *obdLoopFunction = sendObdRequest;
 unsigned long transitionTime = 0;
-
-uint32_t ble_advdata_decode(uint8_t type, uint8_t advdata_len, uint8_t *p_advdata, uint8_t *len, uint8_t *p_field_data) {
-  uint8_t index = 0;
-  uint8_t field_length, field_type;
-
-  while (index < advdata_len) {
-    field_length = p_advdata[index];
-    field_type = p_advdata[index + 1];
-    if (field_type == type) {
-      memcpy(p_field_data, &p_advdata[index + 2], (field_length - 1));
-      *len = field_length - 1;
-      return 0;
-    }
-    index += field_length + 1;
-  }
-  return 1;
-}
 
 void reportCallback(advertisementReport_t *report) {
   uint8_t index;
@@ -81,21 +66,12 @@ void reportCallback(advertisementReport_t *report) {
     Serial.println(len, HEX);
     Serial.print("  The Short Local Name is        : ");
     Serial.println((const char *)adv_name);
-    if (0x00 == memcmp(adv_name, "Biscuit", min(7, len))) {
+    if (0x00 == memcmp(adv_name, "Gobbledego", min(7, len))) {
       ble.stopScanning();
       device.addr_type = report->peerAddrType;
       memcpy(device.addr, report->peerAddr, 6);
 
       ble.connect(report->peerAddr, report->peerAddrType);
-    }
-  }
-  else if (0x00 == ble_advdata_decode(0x09, report->advDataLen, report->advData, &len, adv_name)) {
-    Serial.print("  The length of Complete Local Name : ");
-    Serial.println(len, HEX);
-    Serial.print("  The Complete Local Name is        : ");
-    Serial.println((const char *)adv_name);
-    if (0x00 == memcmp(adv_name, "Heart Rate", min(7, len))) {
-
     }
   }
 }
@@ -119,6 +95,7 @@ void deviceDisconnectedCallback(uint16_t handle){
     Serial.println("Restart scanning.");
     // Disconnect from remote device, restart to scanning.
     connected_id = 0xFFFF;
+    scanDone = false;
     ble.startScanning();
   }
 }
@@ -208,7 +185,7 @@ static void discoveredCharsDescriptorsCallback(BLEStatus_t status, uint16_t con_
       ble.discoverCharacteristicDescriptors(device.connected_handle, &device.service.chars[chars_index].chars);
     }
     else {
-      ble.readValue(device.connected_handle,&device.service.chars[1].chars);
+      scanDone = true;
     }
   }
 }
@@ -230,17 +207,12 @@ void gattReadCallback(BLEStatus_t status, uint16_t con_handle, uint16_t value_ha
     }
     Serial.println(" ");
   }
-  else if (status == BLE_STATUS_DONE) {
-    uint8_t data[]= {0x01,0x02,0x03,0x04,0x05,1,2,3,4,5};
-    ble.writeValue(device.connected_handle, device.service.chars[0].chars.value_handle, sizeof(data), data);
-  }
 }
 
 void gattWrittenCallback(BLEStatus_t status, uint16_t con_handle) {
   if (status == BLE_STATUS_DONE) {
     Serial.println(" ");
-    Serial.println("Write characteristic done");
-    ble.readDescriptorValue(device.connected_handle, device.service.chars[0].descriptor[0].handle);
+    Serial.println("Write characteristic ok");
   }
 }
 
@@ -265,35 +237,6 @@ void gattReadDescriptorCallback(BLEStatus_t status, uint16_t con_handle, uint16_
   }
 }
 
-void gattWriteCCCDCallback(BLEStatus_t status, uint16_t con_handle) {
-  if (status == BLE_STATUS_DONE) {
-    Serial.println("gattWriteCCCDCallback done");
-    if (gatt_notify_flag == 0) { 
-      gatt_notify_flag = 1;
-      ble.writeClientCharsConfigDescriptor(device.connected_handle, &device.service.chars[1].chars, GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION);
-    }
-    else if (gatt_notify_flag == 1) {
-      gatt_notify_flag = 2;
-    }
-  }
-}
-
-void gattNotifyUpdateCallback(BLEStatus_t status, uint16_t con_handle, uint16_t value_handle, uint8_t *value, uint16_t length) {
-  uint8_t index;
-  Serial.println(" ");
-  Serial.println("Notify Update value ");
-  Serial.print("conn handle: ");
-  Serial.println(con_handle, HEX);
-  Serial.print("value handle: ");
-  Serial.println(value_handle, HEX);
-  Serial.print("The value : ");
-  for (index = 0; index < length; index++) {
-    Serial.print(value[index], HEX);
-    Serial.print(" ");
-  }
-  Serial.println(" ");
-}
-
 void setup() {
   Serial.begin(115200);
   delay(5000);
@@ -314,15 +257,15 @@ void setup() {
   ble.onGattCharacteristicWrittenCallback(gattWrittenCallback);
   ble.onGattDescriptorReadCallback(gattReadDescriptorCallback);
 
-  ble.onGattWriteClientCharacteristicConfigCallback(gattWriteCCCDCallback);
-  ble.onGattNotifyUpdateCallback(gattNotifyUpdateCallback);
-
   // Set scan parameters.
   ble.setScanParams(BLE_SCAN_TYPE, BLE_SCAN_INTERVAL, BLE_SCAN_WINDOW);
   
   // Start scanning.
   ble.startScanning();
   Serial.println("Start scanning ");
+
+  carloop.begin();
+  transitionTime = millis();
 }
 
 void loop() {
@@ -355,8 +298,9 @@ void waitForObdResponse() {
   while (carloop.can().receive(message)) {
     canMessageCount++;
     if (!byteArray8Equal(message.data, lastMessageData)) {
-      // Serial.print("Sending: ");
-      // Serial.println(messageToString(message));
+      if (scanDone){
+        ble.writeValue(device.connected_handle, device.service.chars[0].chars.value_handle, sizeof(message.data), message.data);
+      }
       memcpy(lastMessageData, message.data, 8);
     }
   }
@@ -398,4 +342,21 @@ bool byteArray8Equal(uint8_t a1[8], uint8_t a2[8]) {
     if (a1[i] != a2[i]) return false;
   }
   return true;
+}
+
+uint32_t ble_advdata_decode(uint8_t type, uint8_t advdata_len, uint8_t *p_advdata, uint8_t *len, uint8_t *p_field_data) {
+  uint8_t index = 0;
+  uint8_t field_length, field_type;
+
+  while (index < advdata_len) {
+    field_length = p_advdata[index];
+    field_type = p_advdata[index + 1];
+    if (field_type == type) {
+      memcpy(p_field_data, &p_advdata[index + 2], (field_length - 1));
+      *len = field_length - 1;
+      return 0;
+    }
+    index += field_length + 1;
+  }
+  return 1;
 }
