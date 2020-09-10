@@ -57,7 +57,7 @@ int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
   Serial.print("Write value handler: ");
   Serial.println(value_handle, HEX);
 
-  if (character1_handle == value_handle) {
+  /*if (character1_handle == value_handle) {
     memcpy(characteristic1_data, buffer, size);
     Serial.print("Characteristic1 write value: ");
     for (uint8_t index = 0; index < size; index++) {
@@ -65,58 +65,69 @@ int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
       Serial.print(" ");
     }
     Serial.println(" ");
-  }
+  }*/
   return 0;
 }
 
-static void characteristic2_notify(btstack_timer_source_t *ts) {
-  memcpy(characteristic2_data, lastMessageData, 8);
-  ble.sendNotify(character2_handle, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
+static void characteristic1_notify(btstack_timer_source_t *ts) {
+  //memcpy(characteristic1_data, lastMessageData, 8);
+  //ble.sendNotify(character1_handle, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
+
+  characteristic1_data[CHARACTERISTIC1_MAX_LEN-1]++;
+  Serial.print("NOTIFICATION: ");
+  int i = 0;
+  for(i = 0; i < CHARACTERISTIC1_MAX_LEN; i++){
+    Serial.printf("%02x ", characteristic1_data[i]);
+  }
+  Serial.println("");
+  ble.sendNotify(character1_handle, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
+
+  ble.setTimer(ts, 2000);
+  ble.addTimer(ts);
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   delay(5000);
-  Serial.println("BLE peripheral demo.");
-
-  // Initialize ble_stack.
+  Serial.println("BLE peripheral start.");
+  
   ble.init();
-
-  // Register BLE callback functions.
   ble.onConnectedCallback(deviceConnectedCallback);
   ble.onDisconnectedCallback(deviceDisconnectedCallback);
   ble.onDataReadCallback(gattReadCallback);
   ble.onDataWriteCallback(gattWriteCallback);
-
-  // Add GAP service and characteristics
+  
   ble.addService(BLE_UUID_GAP);
   ble.addCharacteristic(BLE_UUID_GAP_CHARACTERISTIC_DEVICE_NAME, ATT_PROPERTY_READ|ATT_PROPERTY_WRITE, (uint8_t*)BLE_DEVICE_NAME, sizeof(BLE_DEVICE_NAME));
   ble.addCharacteristic(BLE_UUID_GAP_CHARACTERISTIC_APPEARANCE, ATT_PROPERTY_READ, appearance, sizeof(appearance));
   ble.addCharacteristic(BLE_UUID_GAP_CHARACTERISTIC_PPCP, ATT_PROPERTY_READ, conn_param, sizeof(conn_param));
 
-  // Add GATT service and characteristics
   ble.addService(BLE_UUID_GATT);
   ble.addCharacteristic(BLE_UUID_GATT_CHARACTERISTIC_SERVICE_CHANGED, ATT_PROPERTY_INDICATE, change, sizeof(change));
 
-  // Add primary service1.
   ble.addService(service1_uuid);
-  // Add characteristic to service1, return value handle of characteristic.
-  character1_handle = ble.addCharacteristicDynamic(char1_uuid, ATT_PROPERTY_WRITE_WITHOUT_RESPONSE, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
-  character2_handle = ble.addCharacteristicDynamic(char2_uuid, ATT_PROPERTY_READ|ATT_PROPERTY_NOTIFY, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
+  character1_handle = ble.addCharacteristicDynamic(char1_uuid, ATT_PROPERTY_READ|ATT_PROPERTY_NOTIFY, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
 
-  // Set BLE advertising parameters
+  ble.addService(service2_uuid);
+  character2_handle = ble.addCharacteristicDynamic(char2_uuid, ATT_PROPERTY_READ, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
+  /*character3_handle = ble.addCharacteristicDynamic(char3_uuid, ATT_PROPERTY_READ, characteristic3_data, CHARACTERISTIC2_MAX_LEN);
+  character4_handle = ble.addCharacteristicDynamic(char4_uuid, ATT_PROPERTY_READ, characteristic4_data, CHARACTERISTIC2_MAX_LEN);
+  character5_handle = ble.addCharacteristicDynamic(char5_uuid, ATT_PROPERTY_READ, characteristic5_data, CHARACTERISTIC2_MAX_LEN);
+  character6_handle = ble.addCharacteristicDynamic(char6_uuid, ATT_PROPERTY_READ, characteristic6_data, CHARACTERISTIC2_MAX_LEN);
+  character7_handle = ble.addCharacteristicDynamic(char7_uuid, ATT_PROPERTY_READ, characteristic7_data, CHARACTERISTIC2_MAX_LEN);
+  character8_handle = ble.addCharacteristicDynamic(char8_uuid, ATT_PROPERTY_READ, characteristic8_data, CHARACTERISTIC2_MAX_LEN);
+  character9_handle = ble.addCharacteristicDynamic(char9_uuid, ATT_PROPERTY_READ, characteristic9_data, CHARACTERISTIC2_MAX_LEN);
+  character10_handle = ble.addCharacteristicDynamic(char10_uuid, ATT_PROPERTY_READ, characteristic10_data, CHARACTERISTIC2_MAX_LEN);*/
+  
   ble.setAdvertisementParams(&adv_params);
-
-  // Set BLE advertising and scan respond data
   ble.setAdvertisementData(sizeof(adv_data), adv_data);
   ble.setScanResponseData(sizeof(scan_response), scan_response);
-  
-  // Start advertising.
   ble.startAdvertising();
   Serial.println("BLE start advertising.");
-    
-  // set one-shot timer
-  characteristic2.process = &characteristic2_notify;
+  
+  characteristic1.process = &characteristic1_notify;
+  ble.setTimer(&characteristic1, 2000);
+  ble.addTimer(&characteristic1);
 
   carloop.begin();
   transitionTime = millis();
@@ -152,11 +163,11 @@ void waitForObdResponse() {
   while (carloop.can().receive(message)) {
     canMessageCount++;
     if (!byteArray8Equal(message.data, lastMessageData)) {
-      Serial.print("Sending: ");
+      Serial.print("Response: ");
       Serial.println(messageToString(message));
       memcpy(lastMessageData, message.data, 8);
-      ble.setTimer(&characteristic2, 1);
-      ble.addTimer(&characteristic2);
+      ble.setTimer(&characteristic1, 1);
+      ble.addTimer(&characteristic1);
     }
   }
 }
