@@ -4,4 +4,3 @@ Blueetooth Low Energy peripheral and central configurations to use with a carloo
 
 Carloop - https://github.com/carloop<br/>
 Bluepy - https://github.com/IanHarvey/bluepy<br/>
-Gobbledegook - https://github.com/nettlep/gobbledegook
