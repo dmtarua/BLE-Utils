@@ -1,6 +1,5 @@
-# BLE-Utils
+# OBD Reader
 
-Blueetooth Low Energy peripheral and central configurations to use with a carloop and an ECU Simulator.
+Blueetooth Low Energy peripheral to use with a Carloop, and a client app.
 
 Carloop - https://github.com/carloop<br/>
-Bluepy - https://github.com/IanHarvey/bluepy<br/>

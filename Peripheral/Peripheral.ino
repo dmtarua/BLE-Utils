@@ -45,7 +45,13 @@ uint16_t gattReadCallback(uint16_t value_handle, uint8_t * buffer, uint16_t buff
   Serial.print("Read value handler: ");
   Serial.println(value_handle, HEX);
 
-  if (character2_handle == value_handle) {
+  if (character1_handle == value_handle) {
+    Serial.println("Character1 read.");
+    memcpy(buffer, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
+    characteristic_len = CHARACTERISTIC1_MAX_LEN;
+  }
+  
+  else if (character2_handle == value_handle) {
     Serial.println("Character2 read.");
     memcpy(buffer, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
     characteristic_len = CHARACTERISTIC2_MAX_LEN;
@@ -56,24 +62,14 @@ uint16_t gattReadCallback(uint16_t value_handle, uint8_t * buffer, uint16_t buff
 int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
   Serial.print("Write value handler: ");
   Serial.println(value_handle, HEX);
-
-  /*if (character1_handle == value_handle) {
-    memcpy(characteristic1_data, buffer, size);
-    Serial.print("Characteristic1 write value: ");
-    for (uint8_t index = 0; index < size; index++) {
-      Serial.print(characteristic1_data[index], HEX);
-      Serial.print(" ");
-    }
-    Serial.println(" ");
-  }*/
+  // TODO
   return 0;
 }
 
 static void characteristic1_notify(btstack_timer_source_t *ts) {
-  //memcpy(characteristic1_data, lastMessageData, 8);
-  //ble.sendNotify(character1_handle, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
+  memcpy(characteristic1_data, lastMessageData, 8);
+  ble.sendNotify(character1_handle, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
 
-  characteristic1_data[CHARACTERISTIC1_MAX_LEN-1]++;
   Serial.print("NOTIFICATION: ");
   int i = 0;
   for(i = 0; i < CHARACTERISTIC1_MAX_LEN; i++){
@@ -110,14 +106,6 @@ void setup() {
 
   ble.addService(service2_uuid);
   character2_handle = ble.addCharacteristicDynamic(char2_uuid, ATT_PROPERTY_READ, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
-  /*character3_handle = ble.addCharacteristicDynamic(char3_uuid, ATT_PROPERTY_READ, characteristic3_data, CHARACTERISTIC2_MAX_LEN);
-  character4_handle = ble.addCharacteristicDynamic(char4_uuid, ATT_PROPERTY_READ, characteristic4_data, CHARACTERISTIC2_MAX_LEN);
-  character5_handle = ble.addCharacteristicDynamic(char5_uuid, ATT_PROPERTY_READ, characteristic5_data, CHARACTERISTIC2_MAX_LEN);
-  character6_handle = ble.addCharacteristicDynamic(char6_uuid, ATT_PROPERTY_READ, characteristic6_data, CHARACTERISTIC2_MAX_LEN);
-  character7_handle = ble.addCharacteristicDynamic(char7_uuid, ATT_PROPERTY_READ, characteristic7_data, CHARACTERISTIC2_MAX_LEN);
-  character8_handle = ble.addCharacteristicDynamic(char8_uuid, ATT_PROPERTY_READ, characteristic8_data, CHARACTERISTIC2_MAX_LEN);
-  character9_handle = ble.addCharacteristicDynamic(char9_uuid, ATT_PROPERTY_READ, characteristic9_data, CHARACTERISTIC2_MAX_LEN);
-  character10_handle = ble.addCharacteristicDynamic(char10_uuid, ATT_PROPERTY_READ, characteristic10_data, CHARACTERISTIC2_MAX_LEN);*/
   
   ble.setAdvertisementParams(&adv_params);
   ble.setAdvertisementData(sizeof(adv_data), adv_data);
@@ -126,8 +114,6 @@ void setup() {
   Serial.println("BLE start advertising.");
   
   characteristic1.process = &characteristic1_notify;
-  ble.setTimer(&characteristic1, 2000);
-  ble.addTimer(&characteristic1);
 
   carloop.begin();
   transitionTime = millis();
@@ -135,12 +121,11 @@ void setup() {
 
 void loop() {
     carloop.update();
-    printValuesAtInterval();
+    printValues();
     obdLoopFunction();
 }
 
-// OBD Loop Functions
-void sendObdRequest() {
+void sendRequest() {
   pidIndex = (pidIndex + 1) % NUM_PIDS_TO_REQUEST;
   CANMessage message;
   message.id = OBD_CAN_BROADCAST_ID;
@@ -149,13 +134,13 @@ void sendObdRequest() {
   message.data[1] = OBD_MODE_CURRENT_DATA; 
   message.data[2] = pidsToRequest[pidIndex];
   carloop.can().transmit(message);
-  obdLoopFunction = waitForObdResponse;
+  obdLoopFunction = waitResponse;
   transitionTime = millis();
 }
 
-void waitForObdResponse() {
+void waitResponse() {
   if (millis() - transitionTime >= 100) {
-    obdLoopFunction = delayUntilNextRequest;
+    obdLoopFunction = delayRequest;
     transitionTime = millis();
     return;
   }
@@ -168,28 +153,26 @@ void waitForObdResponse() {
       memcpy(lastMessageData, message.data, 8);
       ble.setTimer(&characteristic1, 1);
       ble.addTimer(&characteristic1);
+      break;
     }
   }
+  delay(10);
 }
 
-void delayUntilNextRequest() {
+void delayRequest() {
   if (millis() - transitionTime >= 80) {
-    obdLoopFunction = sendObdRequest;
+    obdLoopFunction = sendRequest;
     transitionTime = millis();
   }
 }
 
-void printValuesAtInterval() {
+void printValues() {
   static const unsigned long interval = 10000;
   static unsigned long lastDisplay = 0;
   if (millis() - lastDisplay < interval) {
     return;
   }
   lastDisplay = millis();
-  printValues();
-}
-
-void printValues() {
   Serial.printf("Battery voltage: %12f ", carloop.battery());
   Serial.printf("CAN messages: %12d ", canMessageCount);
   Serial.println("");
