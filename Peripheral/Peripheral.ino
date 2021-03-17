@@ -77,9 +77,6 @@ static void characteristic1_notify(btstack_timer_source_t *ts) {
   }
   Serial.println("");
   ble.sendNotify(character1_handle, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
-
-  ble.setTimer(ts, 2000);
-  ble.addTimer(ts);
 }
 
 void setup() {

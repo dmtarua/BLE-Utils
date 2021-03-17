@@ -1,16 +1,13 @@
-import os
-import sys
-import logging
-import asyncio
-import platform
-from bleak import BleakClient
-from bleak import _logger as logger
+import os, sys, logging, asyncio
+from bleak import BleakClient, _logger as logger
+from obd import map_response
 
 MAC_ADDRESS = "10:d0:7a:17:83:a3"
 CHAR_UUID = "713d0002-503e-4c75-ba94-3148f18d941e"
 
 def notification_handler(sender, data):
     print("{0}: {1}".format(sender, ''.join('{:02x}'.format(x) for x in data)))
+    map_response(data)
 
 async def run(address, debug = False):
     log = logging.getLogger(__name__)
