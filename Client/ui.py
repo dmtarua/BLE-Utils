@@ -16,17 +16,19 @@ class MainWindow(QMainWindow):
     def refresh(self):
         item = self.list_window.listwidget.currentItem()
         if item != None:
-            pid = PID_Memory[item.text()].value
-            value = Value_Memory[item.text()].value
-            frame = Frame_Memory[item.text()].value
-            if pid == None:
+            pid = PID_Memory[item.text()]
+            value = Value_Memory[item.text()]
+            frame = Frame_Memory[item.text()]
+            if item.text() == "ALL_MESSAGES" and Frame_Memory["ALL_MESSAGES"] != None:
+                self.list_window.info.frame.box.setText(''.join('{:02x}'.format(x) for x in frame))
+            elif frame == None:
                 self.list_window.info.frame.box.setText("N/A")
                 self.list_window.info.pid.box.setText("N/A")
                 self.list_window.info.value.box.setText("N/A")
             else:
-                self.list_window.info.frame.box.setText(f"{frame:#0{18}x}")
+                self.list_window.info.frame.box.setText(''.join('{:02x}'.format(x) for x in frame))
                 self.list_window.info.pid.box.setText(f"{pid:#0{4}x}")
-                self.list_window.info.value.box.setText(str(value) +Units_Memory[item.text()].value)
+                self.list_window.info.value.box.setText(str(value) +Units_Memory[item.text()])
 
     def addWidgets(self):
         layout = QHBoxLayout()
@@ -51,7 +53,7 @@ class MainWindow(QMainWindow):
             self.listwidget = QListWidget()
             self.widgetitems = []
             for data in PID_Memory:
-                item = QListWidgetItem(data.name)
+                item = QListWidgetItem(data)
                 self.widgetitems.append(item)
                 self.listwidget.addItem(item)
             self.listwidget.clicked.connect(self.clicked)
@@ -59,17 +61,19 @@ class MainWindow(QMainWindow):
 
         def clicked(self, qmodelindex):
             item = self.listwidget.currentItem()
-            pid = PID_Memory[item.text()].value
-            value = Value_Memory[item.text()].value
-            frame = Frame_Memory[item.text()].value
-            if pid == None:
+            pid = PID_Memory[item.text()]
+            value = Value_Memory[item.text()]
+            frame = Frame_Memory[item.text()]
+            if item.text() == "ALL_MESSAGES" and Frame_Memory["ALL_MESSAGES"] != None:
+                self.info.frame.box.setText(''.join('{:02x}'.format(x) for x in frame))
+            elif frame == None:
                 self.info.frame.box.setText("N/A")
                 self.info.pid.box.setText("N/A")
                 self.info.value.box.setText("N/A")
             else:
-                self.info.frame.box.setText(f"{frame:#0{18}x}")
+                self.info.frame.box.setText(''.join('{:02x}'.format(x) for x in frame))
                 self.info.pid.box.setText(f"{pid:#0{4}x}")
-                self.info.value.box.setText(str(value) +Units_Memory[item.text()].value)
+                self.info.value.box.setText(str(value) +Units_Memory[item.text()])
 
     class ObdInfo(QWidget):
         def __init__(self):

@@ -7,9 +7,9 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
 
 // Loop Function
-void sendObdRequest();
-void waitForObdResponse();
-void delayUntilNextRequest();
+void sendRequest();
+void waitResponse();
+void delayRequest();
 
 // Utils
 void printValuesAtInterval();
@@ -21,7 +21,7 @@ Carloop<CarloopRevision2> carloop;
 int canMessageCount = 0;
 uint8_t pidIndex = NUM_PIDS_TO_REQUEST - 1;
 uint8_t lastMessageData[8];
-auto *obdLoopFunction = sendObdRequest;
+auto *obdLoopFunction = sendRequest;
 unsigned long transitionTime = 0;
 
 void deviceConnectedCallback(BLEStatus_t status, uint16_t handle) {
@@ -76,7 +76,6 @@ static void characteristic1_notify(btstack_timer_source_t *ts) {
     Serial.printf("%02x ", characteristic1_data[i]);
   }
   Serial.println("");
-  ble.sendNotify(character1_handle, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
 }
 
 void setup() {

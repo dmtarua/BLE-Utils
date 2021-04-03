@@ -9,21 +9,22 @@ class BleController(Thread):
         self.MAC_ADDRESS = mac
         self.CHAR_UUID = char
         self.callback = callback
+        self.runb = True
 
     def run(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(self.listen(self.MAC_ADDRESS))
+        loop.close()
 
-    def notification_handler(sender, data):
+    def notification_handler(self, sender, data):
         print("{0}: {1}".format(sender, ''.join('{:02x}'.format(x) for x in data)))
         map_response(data)
         self.callback()
 
     async def listen(self, address):
         async with BleakClient(address) as client:
-            print(f"Connected: {client.is_connected}")
             await client.start_notify(self.CHAR_UUID, self.notification_handler)
-            while True:
-                await asyncio.sleep(5.0)
+            while self.runb:
+                await asyncio.sleep(1)
             await client.stop_notify(self.CHAR_UUID)
