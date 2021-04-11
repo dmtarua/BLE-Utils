@@ -1,5 +1,4 @@
 #include "carloop.h"
-#include "TinyGPS++.h"
 #include "obd.h"
 #include "ble.h"
 
@@ -12,7 +11,6 @@ void waitResponse();
 void delayRequest();
 
 // Utils
-void printValuesAtInterval();
 void printValues();
 bool byteArray8Equal(uint8_t a1[8], uint8_t a2[8]);
 String messageToString(const CANMessage &message);
